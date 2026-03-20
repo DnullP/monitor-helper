@@ -59,6 +59,11 @@ const GENERIC_INPUT_VALUES: &[ValueOption] = &[
         aliases: &["displayport", "displayport-1", "dp", "dp-1"],
     },
     ValueOption {
+        value: 16,
+        label: "displayport-2",
+        aliases: &["displayport-2", "dp2", "dp-2"],
+    },
+    ValueOption {
         value: 17,
         label: "hdmi-1",
         aliases: &["hdmi-1"],
@@ -211,7 +216,30 @@ const PROFILES: &[MonitorProfile] = &[MonitorProfile {
     observed_readable_codes: P2711V_OBSERVED_CODES,
 }];
 
+fn find_profile_by_override(input: &str) -> Option<&'static MonitorProfile> {
+    let normalized = normalize(input);
+
+    PROFILES.iter().find(|profile| {
+        normalize(profile.key) == normalized
+            || normalize(profile.name) == normalized
+            || profile
+                .matchers
+                .iter()
+                .any(|matcher| normalize(matcher) == normalized)
+    })
+}
+
 pub fn detect_profile(info: &DisplayInfo) -> Option<&'static MonitorProfile> {
+    if let Some(profile) = std::env::var("MONITOR_PROFILE")
+        .ok()
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(find_profile_by_override)
+    {
+        return Some(profile);
+    }
+
     let model_name = info.model_name.as_deref().unwrap_or_default();
     let manufacturer = info.manufacturer_id.as_deref().unwrap_or_default();
     let id = info.id.as_str();
