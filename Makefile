@@ -2,7 +2,7 @@ APP := monitor-helper
 CARGO ?= cargo
 ARGS ?=
 
-.PHONY: help build release run list get set profile scan switch-dp check fmt lint test clean
+.PHONY: help build release run list get set profile scan switch-dp switch-hdmi2 check fmt lint test clean
 
 help:
 	@printf "Targets:\n"
@@ -15,6 +15,7 @@ help:
 	@printf "  make profile         Show the detected monitor controller\n"
 	@printf "  make scan ARGS='--display 1 --start 0x00 --end 0xFF'\n"
 	@printf "  make switch-dp ARGS='--display 1 --target dp1 --duration 10'\n"
+	@printf "  make switch-hdmi2 ARGS='--display 1 --interval 5'\n"
 	@printf "  make check           Run cargo check\n"
 	@printf "  make fmt             Format code\n"
 	@printf "  make lint            Run clippy with warnings denied\n"
@@ -47,6 +48,9 @@ scan:
 
 switch-dp:
 	./scripts/switch_to_dp_and_restore.sh $(ARGS)
+
+switch-hdmi2:
+	./scripts/retry_switch_to_hdmi2.sh $(ARGS)
 
 check:
 	$(CARGO) check

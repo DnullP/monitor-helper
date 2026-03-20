@@ -8,7 +8,7 @@ MONITOR_HELPER=${MONITOR_HELPER:-"$REPO_ROOT/target/debug/monitor-helper"}
 
 display=1
 target=dp2
-duration=10
+duration=3
 
 usage() {
     cat <<'EOF'
