@@ -217,8 +217,8 @@ const P2711V_FEATURES: &[FeatureSpec] = &[
 const V2419QW_INPUT_WRITE_VALUES: &[ValueOption] = &[
     ValueOption {
         value: 15,
-        label: "displayport",
-        aliases: &["displayport", "displayport-1", "dp", "dp1", "dp-1"],
+        label: "hdmi-2",
+        aliases: &["hdmi-2", "hdmi2"],
     },
     ValueOption {
         value: 17,
@@ -227,8 +227,8 @@ const V2419QW_INPUT_WRITE_VALUES: &[ValueOption] = &[
     },
     ValueOption {
         value: 18,
-        label: "hdmi-2",
-        aliases: &["hdmi-2", "hdmi2"],
+        label: "source-18",
+        aliases: &["source-18", "input-18", "code-18"],
     },
 ];
 
@@ -507,12 +507,13 @@ mod tests {
         let profile = Some(v2419qw_profile());
         let feature = resolve_feature(profile, "input").expect("input feature should resolve");
 
-        assert_eq!(resolve_value(feature.spec, "displayport").unwrap(), 15);
+        assert_eq!(resolve_value(feature.spec, "hdmi-2").unwrap(), 15);
         assert_eq!(resolve_value(feature.spec, "hdmi-1").unwrap(), 17);
-        assert_eq!(resolve_value(feature.spec, "hdmi-2").unwrap(), 18);
+        assert_eq!(resolve_value(feature.spec, "source-18").unwrap(), 18);
         assert_eq!(value_label(feature.spec, 15), None);
         assert_eq!(value_label(feature.spec, 17), None);
-        assert_eq!(write_value_label(feature.spec, 15), Some("displayport"));
+        assert_eq!(write_value_label(feature.spec, 15), Some("hdmi-2"));
         assert_eq!(write_value_label(feature.spec, 17), Some("hdmi-1"));
+        assert_eq!(write_value_label(feature.spec, 18), Some("source-18"));
     }
 }

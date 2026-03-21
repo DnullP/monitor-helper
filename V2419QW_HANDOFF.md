@@ -148,8 +148,49 @@ Observed result:
 Confirmed mapping so far:
 
 - `hdmi-1 = 17` confirmed
-- `hdmi-2 = 18` not yet confirmed
-- `displayport = 15` still not physically confirmed for the current Windows-connected DP path
+- `hdmi-2 = 15` confirmed
+- `18` is not HDMI2 under the tested Windows path
+
+### 8. `18` also switched to HDMI1
+
+After returning the display to the Windows-connected DP source, another direct command was sent:
+
+```powershell
+.\target\debug\monitor-helper set --display 2 input hdmi-2
+```
+
+Observed result:
+
+- the command reported `set=18` and `set_label=hdmi-2`
+- visually, the monitor still switched to HDMI1 rather than HDMI2
+- a follow-up `get --display 2 input` again failed with an I2C transport error, consistent with the display having switched away from the current Windows source
+
+Updated interpretation:
+
+- `17` reliably maps to HDMI1
+- `15` reliably maps to HDMI2
+- `18` must not be exposed as confirmed HDMI2 on this model
+- for now `18` should be treated as an unconfirmed alternate source code rather than a named duplicate-or-alternate HDMI1-related source code
+
+### 9. `15` was visually confirmed as HDMI2
+
+After returning the display to the Windows-connected source again, a direct command was sent:
+
+```powershell
+.\target\debug\monitor-helper set --display 2 input 15
+```
+
+Observed result:
+
+- the command reported `set=15` and `set_label=displayport` at the time of the test
+- visually, the monitor switched to HDMI2
+- a follow-up `get --display 2 input` again failed with an I2C transport error, consistent with the display having switched away from the current Windows source
+
+Updated interpretation:
+
+- `15` is the confirmed HDMI2 switch value for this model
+- the earlier `displayport` alias was incorrect and should be removed
+- no confirmed DisplayPort switch value is currently known for the tested Windows-connected path
 
 ## Code Changes Already Made
 
@@ -173,9 +214,9 @@ Confirmed mapping so far:
 - added a `V2419QW`-specific profile
 - left `input` without a source-label table so packed `0x0300` reads remain visible but are not falsely labeled as `dvi-1`
 - added separate write-side aliases for `V2419QW input`:
-  - `displayport` -> `15`
   - `hdmi-1` -> `17`
-  - `hdmi-2` -> `18`
+  - `hdmi-2` -> `15`
+  - `source-18` -> `18`
 - added unit coverage to keep read labels and write aliases separate
 
 ### `scripts/probe_input_values.sh`
@@ -214,9 +255,10 @@ The core switching plumbing is in place.
 
 - manually return the monitor to the Windows-connected source if DDC is currently unavailable
 - verify the exact physical mapping for the write-side aliases on this model:
-  - `displayport=15`
-  - `hdmi-2=18`
   - `hdmi-1=17` is already confirmed
+  - `hdmi-2=15` is already confirmed
+  - `source-18=18`
+- find the actual DisplayPort switch value, which is still unknown
 - if desired, extend alias coverage after confirming additional ports such as USB-C
 
 ### Useful verification commands
@@ -225,6 +267,7 @@ The core switching plumbing is in place.
 .\target\debug\monitor-helper profile --display 2
 .\target\debug\monitor-helper get --display 2 input
 .\build.ps1 switch-input '--display' '2' '--target' 'hdmi-2'
+.\build.ps1 switch-input '--display' '2' '--target' 'source-18'
 .\build.ps1 probe-inputs '--display' '2' '--mode' 'common' '--delay' '3'
 ```
 
@@ -234,6 +277,12 @@ Provide reliable direct input switching for this model without pretending that a
 
 The monitor appears unable to expose useful per-input distinction through `0x60`, so the tool should expose a write-capable but read-ambiguous input model for this display.
 
+Confirmed direct-switch values at this point:
+
+- `hdmi-1 -> 17`
+- `hdmi-2 -> 15`
+- `source-18 -> 18` remains unconfirmed beyond the observation that it also landed on HDMI1 during testing
+
 ## Suggested Next Commands For The Next Agent
 
 ```sh
@@ -241,5 +290,5 @@ cargo build
 .\target\debug\monitor-helper list
 .\target\debug\monitor-helper profile --display 2
 .\target\debug\monitor-helper get --display 2 input
-.\build.ps1 switch-input '--display' '2' '--target' 'displayport'
+.\build.ps1 switch-input '--display' '2' '--target' 'hdmi-2'
 ```

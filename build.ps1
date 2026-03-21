@@ -50,7 +50,7 @@ Targets:
         .\build.ps1 set '--display' '2' 'input' 'hdmi-2'
     .\build.ps1 profile '--display' '1'
     .\build.ps1 scan '--display' '1' '--start' '0x00' '--end' '0xFF'
-        .\build.ps1 switch-input '--display' '2' '--target' 'displayport'
+        .\build.ps1 switch-input '--display' '2' '--target' 'hdmi-2'
         .\build.ps1 probe-inputs '--display' '2' '--mode' 'common' '--delay' '3'
     .\build.ps1 switch-dp '--display' '1' '--target' 'dp1' '--duration' '10'
   .\build.ps1 check                     Run cargo check
@@ -299,7 +299,7 @@ Switches the monitor input directly without attempting to restore the previous s
 
 Options:
   --display N           Monitor index passed to monitor-helper. Default: 1
-  --target VALUE        Input value or alias such as displayport, hdmi-1, hdmi-2, 15, 17, 18
+    --target VALUE        Input value or alias such as hdmi-1, hdmi-2, source-18, 15, 17, 18
   -h, --help            Show this help
 '@ | Write-Host
 }
