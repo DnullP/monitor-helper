@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0)]
-    [string]$Target = 'help',
+    [string]$Action = 'help',
 
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$CommandArgs = @()
@@ -47,9 +47,11 @@ Targets:
     .\build.ps1 run 'list'                Run with custom arguments
   .\build.ps1 list                      List detected monitors
     .\build.ps1 get '--display' '1' 'brightness'
-    .\build.ps1 set '--display' '1' 'input' 'hdmi'
+        .\build.ps1 set '--display' '2' 'input' 'hdmi-2'
     .\build.ps1 profile '--display' '1'
     .\build.ps1 scan '--display' '1' '--start' '0x00' '--end' '0xFF'
+        .\build.ps1 switch-input '--display' '2' '--target' 'displayport'
+        .\build.ps1 probe-inputs '--display' '2' '--mode' 'common' '--delay' '3'
     .\build.ps1 switch-dp '--display' '1' '--target' 'dp1' '--duration' '10'
   .\build.ps1 check                     Run cargo check
   .\build.ps1 fmt                       Format code
@@ -60,8 +62,49 @@ Targets:
 Environment:
   CARGO             Cargo executable to use. Default: cargo
   MONITOR_HELPER    Path to monitor-helper.exe. Default: target\debug\monitor-helper.exe
-    MONITOR_PROFILE   Optional profile override such as dell-p2711v when Windows only exposes Generic PnP Monitor
 '@ | Write-Host
+}
+
+function Get-CurrentInputWritebackInfo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Display
+    )
+
+    $currentOutput = & $BinaryPath 'get' '--display' $Display 'input'
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "Failed to read current input from display $Display."
+    }
+
+    $writebackValueLine = $currentOutput | Where-Object { $_ -match '^writeback_value=' } | Select-Object -First 1
+    $writebackSafeLine = $currentOutput | Where-Object { $_ -match '^writeback_safe=' } | Select-Object -First 1
+    $writebackReasonLine = $currentOutput | Where-Object { $_ -match '^writeback_reason=' } | Select-Object -First 1
+
+    $writebackValue = $null
+    if ($writebackValueLine) {
+        $writebackValue = $writebackValueLine.Substring('writeback_value='.Length)
+    }
+
+    $writebackSafe = $false
+    if ($writebackSafeLine) {
+        $writebackSafe = $writebackSafeLine.Substring('writeback_safe='.Length).ToLowerInvariant() -eq 'true'
+    }
+
+    $writebackReason = $null
+    if ($writebackReasonLine) {
+        $writebackReason = $writebackReasonLine.Substring('writeback_reason='.Length)
+    }
+
+    [PSCustomObject]@{
+        Value  = $writebackValue
+        Safe   = $writebackSafe
+        Reason = $writebackReason
+        Output = $currentOutput
+    }
 }
 
 function Normalize-RemainingArgs {
@@ -138,6 +181,7 @@ function Show-SwitchDpHelp {
 Usage: .\build.ps1 switch-dp '--display' 'N' '--target' 'dp1|dp2' '--duration' 'SECONDS'
 
 Temporarily switches the monitor input to DisplayPort and restores the original input after a delay.
+This command refuses to run when the current input readback is ambiguous and cannot be restored safely.
 
 Options:
   --display N           Monitor index passed to monitor-helper. Default: 1
@@ -169,21 +213,16 @@ function Invoke-SwitchDp {
         throw "monitor-helper binary not found at: $binaryPath`nRun '.\build.ps1 build' first or set MONITOR_HELPER to the correct path."
     }
 
-    $currentOutput = & $binaryPath 'get' '--display' $options.Display 'input'
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0) {
-        throw "Failed to read current input from display $($options.Display)."
+    $writeback = Get-CurrentInputWritebackInfo -BinaryPath $binaryPath -Display $options.Display
+    if (-not $writeback.Value -or $writeback.Value -notmatch '^[0-9]+$') {
+        throw "Failed to determine a restorable input value.`n$($writeback.Output -join [Environment]::NewLine)"
+    }
+    if (-not $writeback.Safe) {
+        $reasonText = if ($writeback.Reason) { $writeback.Reason } else { 'unknown' }
+        throw "Refusing to switch display $($options.Display) with auto-restore because the current input readback is ambiguous ($reasonText). Use '.\build.ps1 switch-input' for a direct one-way switch instead."
     }
 
-    $currentLine = $currentOutput | Where-Object { $_ -match '^current=' } | Select-Object -First 1
-    if (-not $currentLine) {
-        throw "Failed to parse the current input value.`n$($currentOutput -join [Environment]::NewLine)"
-    }
-
-    $currentCode = $currentLine.Substring('current='.Length)
-    if ($currentCode -notmatch '^[0-9]+$') {
-        throw "Failed to parse the current input value.`n$($currentOutput -join [Environment]::NewLine)"
-    }
+    $currentCode = $writeback.Value
 
     $restored = $false
     try {
@@ -202,11 +241,86 @@ function Invoke-SwitchDp {
     }
 }
 
+function Get-SwitchInputOptions {
+    param([string[]]$Arguments)
+
+    $options = [ordered]@{
+        Display = 1
+        Target  = $null
+    }
+
+    $index = 0
+    while ($index -lt $Arguments.Count) {
+        $argument = $Arguments[$index]
+
+        switch ($argument) {
+            '--display' {
+                if ($index + 1 -ge $Arguments.Count) {
+                    throw 'Missing value for --display'
+                }
+
+                $options.Display = $Arguments[$index + 1]
+                $index += 2
+            }
+            '--target' {
+                if ($index + 1 -ge $Arguments.Count) {
+                    throw 'Missing value for --target'
+                }
+
+                $options.Target = $Arguments[$index + 1]
+                $index += 2
+            }
+            '-h' {
+                Show-SwitchInputHelp
+                exit 0
+            }
+            '--help' {
+                Show-SwitchInputHelp
+                exit 0
+            }
+            default {
+                throw "Unknown argument: $argument"
+            }
+        }
+    }
+
+    if (-not $options.Target) {
+        throw 'Missing required --target value.'
+    }
+
+    return $options
+}
+
+function Show-SwitchInputHelp {
+    @'
+Usage: .\build.ps1 switch-input '--display' 'N' '--target' 'VALUE'
+
+Switches the monitor input directly without attempting to restore the previous source.
+
+Options:
+  --display N           Monitor index passed to monitor-helper. Default: 1
+  --target VALUE        Input value or alias such as displayport, hdmi-1, hdmi-2, 15, 17, 18
+  -h, --help            Show this help
+'@ | Write-Host
+}
+
+function Invoke-SwitchInput {
+    param([string[]]$Arguments)
+
+    $options = Get-SwitchInputOptions -Arguments $Arguments
+    $binaryPath = Get-BinaryPath
+    if (-not (Test-Path -LiteralPath $binaryPath)) {
+        throw "monitor-helper binary not found at: $binaryPath`nRun '.\build.ps1 build' first or set MONITOR_HELPER to the correct path."
+    }
+
+    Invoke-External -FilePath $binaryPath -Arguments @('set', '--display', $options.Display, 'input', $options.Target)
+}
+
 $normalizedArgs = Normalize-RemainingArgs -Arguments $CommandArgs
 
 Push-Location $script:RepoRoot
 try {
-    switch ($Target.ToLowerInvariant()) {
+    switch ($Action.ToLowerInvariant()) {
         'help' { Show-Help }
         'build' { Invoke-External -FilePath $script:Cargo -Arguments @('build') }
         'release' { Invoke-External -FilePath $script:Cargo -Arguments @('build', '--release') }
@@ -216,6 +330,8 @@ try {
         'set' { Invoke-External -FilePath $script:Cargo -Arguments (@('run', '--', 'set') + $normalizedArgs) }
         'profile' { Invoke-External -FilePath $script:Cargo -Arguments (@('run', '--', 'profile') + $normalizedArgs) }
         'scan' { Invoke-External -FilePath $script:Cargo -Arguments (@('run', '--', 'scan') + $normalizedArgs) }
+        'switch-input' { Invoke-SwitchInput -Arguments $normalizedArgs }
+        'probe-inputs' { Invoke-External -FilePath 'powershell' -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $script:RepoRoot 'scripts\probe_input_values.ps1')) + $normalizedArgs }
         'switch-dp' { Invoke-SwitchDp -Arguments $normalizedArgs }
         'check' { Invoke-External -FilePath $script:Cargo -Arguments @('check') }
         'fmt' { Invoke-External -FilePath $script:Cargo -Arguments @('fmt') }
@@ -223,7 +339,7 @@ try {
         'test' { Invoke-External -FilePath $script:Cargo -Arguments @('test') }
         'clean' { Invoke-External -FilePath $script:Cargo -Arguments @('clean') }
         default {
-            throw "Unknown target: $Target`nRun '.\build.ps1 help' to see the supported targets."
+            throw "Unknown target: $Action`nRun '.\build.ps1 help' to see the supported targets."
         }
     }
 }

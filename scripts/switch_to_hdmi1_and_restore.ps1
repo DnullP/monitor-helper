@@ -17,6 +17,7 @@ function Show-Usage {
 Usage: .\scripts\switch_to_hdmi1_and_restore.ps1 [-Display N] [-Duration SECONDS] [-Target VALUE] [-ProfileKey KEY]
 
 Temporarily switches the monitor input to HDMI 1 and restores the original input after a delay.
+This command refuses to run when the current input readback is ambiguous and cannot be restored safely.
 
 Parameters:
   -Display N         Monitor index passed to monitor-helper. Default: 1
@@ -53,6 +54,33 @@ function Get-BinaryPath {
     return Join-Path $script:RepoRoot 'target\debug\monitor-helper.exe'
 }
 
+function Get-CurrentInputWritebackInfo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryPath,
+
+        [Parameter(Mandatory = $true)]
+        [int]$DisplayIndex
+    )
+
+    $currentOutput = & $BinaryPath 'get' '--display' $DisplayIndex 'input'
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "Failed to read current input from display $DisplayIndex."
+    }
+
+    $writebackValueLine = $currentOutput | Where-Object { $_ -match '^writeback_value=' } | Select-Object -First 1
+    $writebackSafeLine = $currentOutput | Where-Object { $_ -match '^writeback_safe=' } | Select-Object -First 1
+    $writebackReasonLine = $currentOutput | Where-Object { $_ -match '^writeback_reason=' } | Select-Object -First 1
+
+    [PSCustomObject]@{
+        Value = if ($writebackValueLine) { $writebackValueLine.Substring('writeback_value='.Length) } else { $null }
+        Safe = if ($writebackSafeLine) { $writebackSafeLine.Substring('writeback_safe='.Length).ToLowerInvariant() -eq 'true' } else { $false }
+        Reason = if ($writebackReasonLine) { $writebackReasonLine.Substring('writeback_reason='.Length) } else { $null }
+        Output = $currentOutput
+    }
+}
+
 if ($Target -in @('-h', '--help')) {
     Show-Usage
     exit 0
@@ -80,21 +108,16 @@ $restored = $false
 $currentCode = $null
 
 try {
-    $currentOutput = & $binaryPath 'get' '--display' $Display 'input'
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0) {
-        throw "Failed to read current input from display $Display."
+    $writeback = Get-CurrentInputWritebackInfo -BinaryPath $binaryPath -DisplayIndex $Display
+    if (-not $writeback.Value -or $writeback.Value -notmatch '^[0-9]+$') {
+        throw "Failed to determine a restorable input value.`n$($writeback.Output -join [Environment]::NewLine)"
+    }
+    if (-not $writeback.Safe) {
+        $reasonText = if ($writeback.Reason) { $writeback.Reason } else { 'unknown' }
+        throw "Refusing to switch display $Display with auto-restore because the current input readback is ambiguous ($reasonText). Use a direct 'set input' command for one-way switching instead."
     }
 
-    $currentLine = $currentOutput | Where-Object { $_ -match '^current=' } | Select-Object -First 1
-    if (-not $currentLine) {
-        throw "Failed to parse the current input value.`n$($currentOutput -join [Environment]::NewLine)"
-    }
-
-    $currentCode = $currentLine.Substring('current='.Length)
-    if ($currentCode -notmatch '^[0-9]+$') {
-        throw "Failed to parse the current input value.`n$($currentOutput -join [Environment]::NewLine)"
-    }
+    $currentCode = $writeback.Value
 
     Write-Host "Current input VCP value: $currentCode"
     Write-Host "Switching display $Display to $Target for ${Duration}s"

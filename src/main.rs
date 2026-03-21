@@ -13,7 +13,7 @@ fn main() {
 mod app {
     use crate::profile::{
         controller_name, controls_for, detect_profile, feature_name, observed_codes,
-        resolve_feature, resolve_value, value_label,
+        resolve_feature, resolve_value, value_label, write_options, write_value_label,
     };
     use clap::{Args, Parser, Subcommand};
     use ddc_hi::{Ddc, Display};
@@ -314,6 +314,7 @@ mod app {
         value: ddc_hi::VcpValue,
     ) {
         let decoded = decode_current_value(feature, value.value());
+        let writeback = current_writeback_value(feature, value.value(), &decoded);
         println!("display={display}");
         println!("controller={}", controller_name(&monitor.info));
         println!("feature={} (0x{:02X})", feature.name, feature.code);
@@ -340,6 +341,24 @@ mod app {
         if let Some(decoded_current_label) = decoded.decoded_current_label {
             println!("decoded_current_label={decoded_current_label}");
         }
+        if let Some(writeback_value) = writeback.value {
+            println!("writeback_value={writeback_value}");
+        }
+        if let Some(writeback_source) = writeback.source {
+            println!("writeback_source={writeback_source}");
+        }
+        if let Some(writeback_label) = writeback.label {
+            println!("writeback_label={writeback_label}");
+        }
+        println!("writeback_safe={}", writeback.safe);
+        if let Some(writeback_reason) = writeback.reason {
+            println!("writeback_reason={writeback_reason}");
+        }
+    }
+
+    fn refresh_monitor_info(monitor: &mut Display) {
+        let _ = monitor.update_capabilities();
+        let _ = monitor.update_from_ddc();
     }
 
     fn get_feature(selector: DisplaySelector, feature: FeatureArg) -> Result<(), String> {
@@ -350,6 +369,7 @@ mod app {
                 println!();
             }
 
+            refresh_monitor_info(&mut monitor);
             let profile = detect_profile(&monitor.info);
             let feature = resolve_feature(profile, feature.as_str())?;
             let value = monitor
@@ -377,6 +397,7 @@ mod app {
                 println!();
             }
 
+            refresh_monitor_info(&mut monitor);
             let profile = detect_profile(&monitor.info);
             let feature = resolve_feature(profile, feature.as_str())?;
             let value = resolve_value(feature.spec, &value)?;
@@ -404,7 +425,7 @@ mod app {
             println!("controller={}", controller_name(&monitor.info));
             println!("feature={} (0x{:02X})", feature.name, feature.code);
             println!("set={value}");
-            if let Some(label) = value_label(feature.spec, value) {
+            if let Some(label) = write_value_label(feature.spec, value) {
                 println!("set_label={label}");
             }
         }
@@ -420,8 +441,7 @@ mod app {
                 println!();
             }
 
-            let _ = monitor.update_capabilities();
-            let _ = monitor.update_from_ddc();
+            refresh_monitor_info(&mut monitor);
             let profile = detect_profile(&monitor.info);
 
             println!("display={display}");
@@ -453,6 +473,18 @@ mod app {
                         .join(", ");
                     println!("    values: {values}");
                 }
+                let write_values = write_options(feature);
+                if !write_values.is_empty()
+                    && (feature.value_options.is_empty()
+                        || feature.write_options.as_ptr() != feature.value_options.as_ptr())
+                {
+                    let values = write_values
+                        .iter()
+                        .map(|option| format!("{}={}", option.label, option.value))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    println!("    write_values: {values}");
+                }
             }
 
             let observed = observed_codes(profile);
@@ -480,6 +512,11 @@ mod app {
         decoded_current: Option<u16>,
         decoded_current_source: Option<String>,
         decoded_current_label: Option<String>,
+        writeback_value: Option<u16>,
+        writeback_source: Option<String>,
+        writeback_label: Option<String>,
+        writeback_safe: bool,
+        writeback_reason: Option<String>,
     }
 
     #[derive(Debug)]
@@ -490,6 +527,14 @@ mod app {
         decoded_current: Option<u16>,
         decoded_current_source: Option<&'static str>,
         decoded_current_label: Option<String>,
+    }
+
+    struct CurrentWriteback {
+        value: Option<u16>,
+        source: Option<&'static str>,
+        label: Option<String>,
+        safe: bool,
+        reason: Option<&'static str>,
     }
 
     fn decode_current_value(
@@ -518,6 +563,10 @@ mod app {
                 (Some(high_byte), Some("high-byte"), Some(label))
             } else if let Some(label) = low_label {
                 (Some(low_byte), Some("low-byte"), Some(label))
+            } else if low_byte == 0 && high_byte != 0 {
+                (Some(high_byte), Some("high-byte-zero-low-byte"), None)
+            } else if high_byte == 0 && low_byte != 0 {
+                (Some(low_byte), Some("low-byte-zero-high-byte"), None)
             } else {
                 (None, None, None)
             };
@@ -532,8 +581,48 @@ mod app {
         }
     }
 
+    fn current_writeback_value(
+        feature: &crate::profile::ResolvedFeature,
+        raw_current: u16,
+        decoded: &DecodedCurrent,
+    ) -> CurrentWriteback {
+        if raw_current <= 0xFF {
+            return CurrentWriteback {
+                value: Some(raw_current),
+                source: Some("raw-current"),
+                label: write_value_label(feature.spec, raw_current).map(str::to_string),
+                safe: true,
+                reason: Some("exact-readback"),
+            };
+        }
+
+        if let Some(decoded_current) = decoded.decoded_current {
+            let safe = decoded.decoded_current_label.is_some();
+            return CurrentWriteback {
+                value: Some(decoded_current),
+                source: decoded.decoded_current_source,
+                label: write_value_label(feature.spec, decoded_current).map(str::to_string),
+                safe,
+                reason: Some(if safe {
+                    "decoded-labeled-current"
+                } else {
+                    "ambiguous-packed-readback"
+                }),
+            };
+        }
+
+        CurrentWriteback {
+            value: None,
+            source: None,
+            label: None,
+            safe: false,
+            reason: Some("no-writeback-candidate"),
+        }
+    }
+
     fn probe_feature(selector: DisplaySelector, feature: FeatureArg) -> Result<(), String> {
         let (display, mut monitor) = open_display(&selector)?;
+        refresh_monitor_info(&mut monitor);
         let profile = detect_profile(&monitor.info);
         let feature = resolve_feature(profile, feature.as_str())?;
         let value = monitor
@@ -542,6 +631,7 @@ mod app {
             .map_err(|err| format!("Failed to read {} from display {}: {err}", feature, display))?;
 
         let decoded = decode_current_value(&feature, value.value());
+        let writeback = current_writeback_value(&feature, value.value(), &decoded);
         println!("current={}", value.value());
         println!("maximum={}", value.maximum());
         if let Some(current_hex) = decoded.current_hex {
@@ -564,6 +654,19 @@ mod app {
         }
         if let Some(decoded_current_label) = decoded.decoded_current_label {
             println!("decoded_current_label={decoded_current_label}");
+        }
+        if let Some(writeback_value) = writeback.value {
+            println!("writeback_value={writeback_value}");
+        }
+        if let Some(writeback_source) = writeback.source {
+            println!("writeback_source={writeback_source}");
+        }
+        if let Some(writeback_label) = writeback.label {
+            println!("writeback_label={writeback_label}");
+        }
+        println!("writeback_safe={}", writeback.safe);
+        if let Some(writeback_reason) = writeback.reason {
+            println!("writeback_reason={writeback_reason}");
         }
 
         Ok(())
@@ -648,6 +751,11 @@ mod app {
         let mut decoded_current = None;
         let mut decoded_current_source = None;
         let mut decoded_current_label = None;
+        let mut writeback_value = None;
+        let mut writeback_source = None;
+        let mut writeback_label = None;
+        let mut writeback_safe = false;
+        let mut writeback_reason = None;
 
         for line in output.lines() {
             if let Some(value) = line.strip_prefix("current=") {
@@ -668,6 +776,16 @@ mod app {
                 decoded_current_source = Some(value.to_string());
             } else if let Some(value) = line.strip_prefix("decoded_current_label=") {
                 decoded_current_label = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("writeback_value=") {
+                writeback_value = value.parse::<u16>().ok();
+            } else if let Some(value) = line.strip_prefix("writeback_source=") {
+                writeback_source = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("writeback_label=") {
+                writeback_label = Some(value.to_string());
+            } else if let Some(value) = line.strip_prefix("writeback_safe=") {
+                writeback_safe = value.eq_ignore_ascii_case("true");
+            } else if let Some(value) = line.strip_prefix("writeback_reason=") {
+                writeback_reason = Some(value.to_string());
             }
         }
 
@@ -682,6 +800,11 @@ mod app {
                 decoded_current,
                 decoded_current_source,
                 decoded_current_label,
+                writeback_value,
+                writeback_source,
+                writeback_label,
+                writeback_safe,
+                writeback_reason,
             }),
             _ => Err(format!("Invalid probe output for 0x{feature_code:02X}")),
         }
@@ -707,13 +830,12 @@ mod app {
                 println!();
             }
 
-            let _ = monitor.update_capabilities();
-            let _ = monitor.update_from_ddc();
+            refresh_monitor_info(&mut monitor);
             let profile = detect_profile(&monitor.info);
             let probe_selector = DisplaySelector {
                 all: false,
-                display: None,
-                id: Some(monitor.info.id.clone()),
+                display: Some(display),
+                id: None,
                 name: None,
             };
 
@@ -775,6 +897,23 @@ mod app {
                                     decoded_current, source
                                 );
                             }
+                        }
+                        if let Some(writeback_value) = result.writeback_value {
+                            let source = result.writeback_source.as_deref().unwrap_or("unknown");
+                            if let Some(writeback_label) = result.writeback_label.as_deref() {
+                                println!(
+                                    "0x{code:02X} writeback_value={} writeback_label={} source={} safe={}",
+                                    writeback_value, writeback_label, source, result.writeback_safe
+                                );
+                            } else {
+                                println!(
+                                    "0x{code:02X} writeback_value={} source={} safe={}",
+                                    writeback_value, source, result.writeback_safe
+                                );
+                            }
+                        }
+                        if let Some(writeback_reason) = result.writeback_reason.as_deref() {
+                            println!("0x{code:02X} writeback_reason={writeback_reason}");
                         }
                     }
                     Err(err) => {

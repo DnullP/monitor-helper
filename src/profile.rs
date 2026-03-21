@@ -16,6 +16,7 @@ pub struct FeatureSpec {
     pub aliases: &'static [&'static str],
     pub writable: bool,
     pub value_options: &'static [ValueOption],
+    pub write_options: &'static [ValueOption],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -100,6 +101,7 @@ const GENERIC_FEATURES: &[FeatureSpec] = &[
         aliases: &["brightness", "luminance"],
         writable: true,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
     FeatureSpec {
         code: 0x12,
@@ -107,6 +109,7 @@ const GENERIC_FEATURES: &[FeatureSpec] = &[
         aliases: &["contrast"],
         writable: true,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
     FeatureSpec {
         code: 0x60,
@@ -114,6 +117,7 @@ const GENERIC_FEATURES: &[FeatureSpec] = &[
         aliases: &["input", "input-source", "source"],
         writable: true,
         value_options: GENERIC_INPUT_VALUES,
+        write_options: GENERIC_INPUT_VALUES,
     },
     FeatureSpec {
         code: 0x62,
@@ -121,6 +125,7 @@ const GENERIC_FEATURES: &[FeatureSpec] = &[
         aliases: &["volume", "speaker-volume"],
         writable: true,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
     FeatureSpec {
         code: 0xD6,
@@ -128,6 +133,7 @@ const GENERIC_FEATURES: &[FeatureSpec] = &[
         aliases: &["power", "power-mode"],
         writable: true,
         value_options: GENERIC_POWER_VALUES,
+        write_options: GENERIC_POWER_VALUES,
     },
     FeatureSpec {
         code: 0xDF,
@@ -135,6 +141,7 @@ const GENERIC_FEATURES: &[FeatureSpec] = &[
         aliases: &["vcp-version", "vcp", "mccs-version"],
         writable: false,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
 ];
 
@@ -163,6 +170,7 @@ const P2711V_FEATURES: &[FeatureSpec] = &[
         aliases: &["brightness", "luminance"],
         writable: true,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
     FeatureSpec {
         code: 0x12,
@@ -170,6 +178,7 @@ const P2711V_FEATURES: &[FeatureSpec] = &[
         aliases: &["contrast"],
         writable: true,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
     FeatureSpec {
         code: 0x60,
@@ -177,6 +186,7 @@ const P2711V_FEATURES: &[FeatureSpec] = &[
         aliases: &["input", "input-source", "source"],
         writable: true,
         value_options: P2711V_INPUT_VALUES,
+        write_options: P2711V_INPUT_VALUES,
     },
     FeatureSpec {
         code: 0x62,
@@ -184,6 +194,7 @@ const P2711V_FEATURES: &[FeatureSpec] = &[
         aliases: &["volume", "speaker-volume"],
         writable: true,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
     FeatureSpec {
         code: 0xD6,
@@ -191,6 +202,7 @@ const P2711V_FEATURES: &[FeatureSpec] = &[
         aliases: &["power", "power-mode"],
         writable: true,
         value_options: GENERIC_POWER_VALUES,
+        write_options: GENERIC_POWER_VALUES,
     },
     FeatureSpec {
         code: 0xDF,
@@ -198,6 +210,76 @@ const P2711V_FEATURES: &[FeatureSpec] = &[
         aliases: &["vcp-version", "vcp", "mccs-version"],
         writable: false,
         value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
+    },
+];
+
+const V2419QW_INPUT_WRITE_VALUES: &[ValueOption] = &[
+    ValueOption {
+        value: 15,
+        label: "displayport",
+        aliases: &["displayport", "displayport-1", "dp", "dp1", "dp-1"],
+    },
+    ValueOption {
+        value: 17,
+        label: "hdmi-1",
+        aliases: &["hdmi", "hdmi-1", "hdmi1"],
+    },
+    ValueOption {
+        value: 18,
+        label: "hdmi-2",
+        aliases: &["hdmi-2", "hdmi2"],
+    },
+];
+
+const V2419QW_FEATURES: &[FeatureSpec] = &[
+    FeatureSpec {
+        code: 0x10,
+        name: "brightness",
+        aliases: &["brightness", "luminance"],
+        writable: true,
+        value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
+    },
+    FeatureSpec {
+        code: 0x12,
+        name: "contrast",
+        aliases: &["contrast"],
+        writable: true,
+        value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
+    },
+    FeatureSpec {
+        code: 0x60,
+        name: "input",
+        aliases: &["input", "input-source", "source"],
+        writable: true,
+        value_options: EMPTY_VALUES,
+        write_options: V2419QW_INPUT_WRITE_VALUES,
+    },
+    FeatureSpec {
+        code: 0x62,
+        name: "volume",
+        aliases: &["volume", "speaker-volume"],
+        writable: true,
+        value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
+    },
+    FeatureSpec {
+        code: 0xD6,
+        name: "power",
+        aliases: &["power", "power-mode"],
+        writable: true,
+        value_options: GENERIC_POWER_VALUES,
+        write_options: GENERIC_POWER_VALUES,
+    },
+    FeatureSpec {
+        code: 0xDF,
+        name: "vcp-version",
+        aliases: &["vcp-version", "vcp", "mccs-version"],
+        writable: false,
+        value_options: EMPTY_VALUES,
+        write_options: EMPTY_VALUES,
     },
 ];
 
@@ -208,13 +290,22 @@ const P2711V_OBSERVED_CODES: &[u8] = &[
     0xCA, 0xCC, 0xD6, 0xDC, 0xDF, 0xE0, 0xE1, 0xE2, 0xF0, 0xF3, 0xF7, 0xFA, 0xFD, 0xFE, 0xFF,
 ];
 
-const PROFILES: &[MonitorProfile] = &[MonitorProfile {
-    key: "dell-p2711v",
-    name: "Dell P2711V",
-    matchers: &["p2711v"],
-    features: P2711V_FEATURES,
-    observed_readable_codes: P2711V_OBSERVED_CODES,
-}];
+const PROFILES: &[MonitorProfile] = &[
+    MonitorProfile {
+        key: "dell-p2711v",
+        name: "Dell P2711V",
+        matchers: &["p2711v"],
+        features: P2711V_FEATURES,
+        observed_readable_codes: P2711V_OBSERVED_CODES,
+    },
+    MonitorProfile {
+        key: "dell-v2419qw",
+        name: "Dell V2419QW",
+        matchers: &["v2419qw"],
+        features: V2419QW_FEATURES,
+        observed_readable_codes: &[],
+    },
+];
 
 fn find_profile_by_override(input: &str) -> Option<&'static MonitorProfile> {
     let normalized = normalize(input);
@@ -311,7 +402,7 @@ pub fn resolve_value(spec: Option<&'static FeatureSpec>, input: &str) -> Result<
     let normalized = normalize(input);
 
     if let Some(spec) = spec {
-        if let Some(option) = spec.value_options.iter().find(|option| {
+        if let Some(option) = write_options(spec).iter().find(|option| {
             option.label.eq_ignore_ascii_case(input)
                 || option
                     .aliases
@@ -341,6 +432,23 @@ pub fn value_label(spec: Option<&'static FeatureSpec>, value: u16) -> Option<&'s
             .find(|option| option.value == value)
             .map(|option| option.label)
     })
+}
+
+pub fn write_value_label(spec: Option<&'static FeatureSpec>, value: u16) -> Option<&'static str> {
+    spec.and_then(|feature| {
+        write_options(feature)
+            .iter()
+            .find(|option| option.value == value)
+            .map(|option| option.label)
+    })
+}
+
+pub fn write_options(spec: &'static FeatureSpec) -> &'static [ValueOption] {
+    if spec.write_options.is_empty() {
+        spec.value_options
+    } else {
+        spec.write_options
+    }
 }
 
 fn find_feature_by_name(
@@ -380,5 +488,31 @@ fn parse_u16(input: &str) -> Result<u16, std::num::ParseIntError> {
         u16::from_str_radix(hex, 16)
     } else {
         input.trim().parse::<u16>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PROFILES, resolve_feature, resolve_value, value_label, write_value_label};
+
+    fn v2419qw_profile() -> &'static super::MonitorProfile {
+        PROFILES
+            .iter()
+            .find(|profile| profile.key == "dell-v2419qw")
+            .expect("V2419QW profile should exist")
+    }
+
+    #[test]
+    fn v2419qw_input_accepts_write_aliases_without_read_labels() {
+        let profile = Some(v2419qw_profile());
+        let feature = resolve_feature(profile, "input").expect("input feature should resolve");
+
+        assert_eq!(resolve_value(feature.spec, "displayport").unwrap(), 15);
+        assert_eq!(resolve_value(feature.spec, "hdmi-1").unwrap(), 17);
+        assert_eq!(resolve_value(feature.spec, "hdmi-2").unwrap(), 18);
+        assert_eq!(value_label(feature.spec, 15), None);
+        assert_eq!(value_label(feature.spec, 17), None);
+        assert_eq!(write_value_label(feature.spec, 15), Some("displayport"));
+        assert_eq!(write_value_label(feature.spec, 17), Some("hdmi-1"));
     }
 }

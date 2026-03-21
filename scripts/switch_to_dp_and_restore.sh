@@ -17,6 +17,7 @@ usage() {
 Usage: switch_to_dp_and_restore.sh [--display N | --id ID | --name TEXT] [--target dp1|dp2] [--duration SECONDS]
 
 Temporarily switches the monitor input to DisplayPort and restores the original input after a delay.
+This command refuses to run when the current input readback is ambiguous and cannot be restored safely.
 
 Options:
     --display N           Monitor index passed to monitor-helper. Default: 1
@@ -109,15 +110,23 @@ run_helper() {
 }
 
 current_output=$(run_helper get input)
-current_code=$(printf '%s\n' "$current_output" | awk -F= '/^current=/{print $2}')
+current_code=$(printf '%s\n' "$current_output" | awk -F= '/^writeback_value=/{print $2}')
+current_safe=$(printf '%s\n' "$current_output" | awk -F= '/^writeback_safe=/{print $2}')
+current_reason=$(printf '%s\n' "$current_output" | awk -F= '/^writeback_reason=/{print $2}')
 
 case "$current_code" in
     ''|*[!0-9]*)
-        echo "Failed to parse the current input value." >&2
+        echo "Failed to determine a restorable input value." >&2
         printf '%s\n' "$current_output" >&2
         exit 1
         ;;
 esac
+
+if [ "$current_safe" != "true" ]; then
+    echo "Refusing to switch the monitor with auto-restore because the current input readback is ambiguous (${current_reason:-unknown})." >&2
+    echo "Use a direct monitor-helper set input ... command for one-way switching instead." >&2
+    exit 1
+fi
 
 restored=0
 

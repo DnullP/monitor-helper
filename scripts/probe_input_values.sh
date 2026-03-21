@@ -142,6 +142,8 @@ for value in $values; do
     else
         echo "set_failed=true" >&2
         printf '%s\n' "$output" >&2
+        echo "Stopping probe because DDC access failed after a switch attempt. If the monitor changed away from this host, this is expected." >&2
+        break
     fi
 
     attempt=$((attempt + 1))
