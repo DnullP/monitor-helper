@@ -2,7 +2,7 @@ APP := monitor-helper
 CARGO ?= cargo
 ARGS ?=
 
-.PHONY: help build release run list usb-scan usb-watch get set profile scan probe-inputs switch-dp switch-hdmi2 check fmt lint test clean
+.PHONY: help build release run list usb-scan usb-watch get set profile capabilities scan probe-inputs cycle-inputs switch-dp switch-hdmi2 check fmt lint test clean
 
 help:
 	@printf "Targets:\n"
@@ -15,8 +15,10 @@ help:
 	@printf "  make get ARGS='--display 1 brightness'\n"
 	@printf "  make set ARGS='--display 1 input hdmi'\n"
 	@printf "  make profile         Show the detected monitor controller\n"
+	@printf "  make capabilities ARGS='--display 1'\n"
 	@printf "  make scan ARGS='--display 1 --start 0x00 --end 0xFF'\n"
 	@printf "  make probe-inputs ARGS='--display 2 --mode common --delay 3'\n"
+	@printf "  make cycle-inputs ARGS='--display 1 --start 1 --end 255 --delay 10'\n"
 	@printf "  make switch-dp ARGS='--display 1 --target dp1 --duration 10'\n"
 	@printf "  make switch-hdmi2 ARGS='--display 1 --interval 5'\n"
 	@printf "  make check           Run cargo check\n"
@@ -52,11 +54,17 @@ set:
 profile:
 	$(CARGO) run -- profile
 
+capabilities:
+	$(CARGO) run -- capabilities $(ARGS)
+
 scan:
 	$(CARGO) run -- scan $(ARGS)
 
 probe-inputs:
 	./scripts/probe_input_values.sh $(ARGS)
+
+cycle-inputs:
+	./scripts/cycle_input_values_forever.sh $(ARGS)
 
 switch-dp:
 	./scripts/switch_to_dp_and_restore.sh $(ARGS)
