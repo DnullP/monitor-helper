@@ -7,17 +7,21 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 MONITOR_HELPER=${MONITOR_HELPER:-"$REPO_ROOT/target/debug/monitor-helper"}
 
 display=1
+display_id=
+display_name=
 interval=5
 
 usage() {
     cat <<'EOF'
-Usage: retry_switch_to_hdmi2.sh [--display N] [--interval SECONDS]
+Usage: retry_switch_to_hdmi2.sh [--display N | --id ID | --name TEXT] [--interval SECONDS]
 
 Repeatedly attempts to switch the monitor input to HDMI-2 every few seconds.
 This runs until interrupted.
 
 Options:
-  --display N            Monitor index passed to monitor-helper. Default: 1
+    --display N            Monitor index passed to monitor-helper. Default: 1
+    --id ID                Exact monitor id from monitor-helper list
+    --name TEXT            Match monitor by id/model/controller text
   --interval SECONDS     Delay between attempts. Default: 5
   -h, --help             Show this help
 
@@ -31,6 +35,16 @@ while [ "$#" -gt 0 ]; do
         --display)
             [ "$#" -ge 2 ] || { echo "Missing value for --display" >&2; exit 1; }
             display=$2
+            shift 2
+            ;;
+        --id)
+            [ "$#" -ge 2 ] || { echo "Missing value for --id" >&2; exit 1; }
+            display_id=$2
+            shift 2
+            ;;
+        --name)
+            [ "$#" -ge 2 ] || { echo "Missing value for --name" >&2; exit 1; }
+            display_name=$2
             shift 2
             ;;
         --interval)
@@ -70,14 +84,24 @@ if [ ! -x "$MONITOR_HELPER" ]; then
     exit 1
 fi
 
-echo "Attempting to switch display $display to HDMI-2 every ${interval}s"
+run_helper() {
+    if [ -n "$display_id" ]; then
+        "$MONITOR_HELPER" "$@" --id "$display_id"
+    elif [ -n "$display_name" ]; then
+        "$MONITOR_HELPER" "$@" --name "$display_name"
+    else
+        "$MONITOR_HELPER" "$@" --display "$display"
+    fi
+}
+
+echo "Attempting to switch the selected monitor to HDMI-2 every ${interval}s"
 echo "Press Ctrl+C to stop."
 
 attempt=1
 
 while :; do
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    if output=$($MONITOR_HELPER set --display "$display" input 18 2>&1); then
+    if output=$(run_helper set input 18 2>&1); then
         echo "[$timestamp] attempt=$attempt status=ok target=hdmi2"
     else
         echo "[$timestamp] attempt=$attempt status=error target=hdmi2" >&2

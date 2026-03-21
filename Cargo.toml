@@ -9,3 +9,5 @@ ddc-hi = { version = "0.4.1", default-features = false, features = [
     "ddc-macos",
     "ddc-winapi",
 ] }
+futures-lite = "2.6.1"
+nusb = "0.2.3"

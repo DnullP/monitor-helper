@@ -7,19 +7,23 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 MONITOR_HELPER=${MONITOR_HELPER:-"$REPO_ROOT/target/debug/monitor-helper"}
 
 display=1
+display_id=
+display_name=
 target=dp2
 duration=3
 
 usage() {
     cat <<'EOF'
-Usage: switch_to_dp_and_restore.sh [--display N] [--target dp1|dp2] [--duration SECONDS]
+Usage: switch_to_dp_and_restore.sh [--display N | --id ID | --name TEXT] [--target dp1|dp2] [--duration SECONDS]
 
 Temporarily switches the monitor input to DisplayPort and restores the original input after a delay.
 
 Options:
-  --display N           Monitor index passed to monitor-helper. Default: 1
+    --display N           Monitor index passed to monitor-helper. Default: 1
+    --id ID               Exact monitor id from monitor-helper list
+    --name TEXT           Match monitor by id/model/controller text
   --target dp1|dp2      Target DisplayPort connector. Default: dp1
-  --duration SECONDS    Seconds to wait before restoring the original input. Default: 10
+    --duration SECONDS    Seconds to wait before restoring the original input. Default: 3
   -h, --help            Show this help
 
 Environment:
@@ -32,6 +36,16 @@ while [ "$#" -gt 0 ]; do
         --display)
             [ "$#" -ge 2 ] || { echo "Missing value for --display" >&2; exit 1; }
             display=$2
+            shift 2
+            ;;
+        --id)
+            [ "$#" -ge 2 ] || { echo "Missing value for --id" >&2; exit 1; }
+            display_id=$2
+            shift 2
+            ;;
+        --name)
+            [ "$#" -ge 2 ] || { echo "Missing value for --name" >&2; exit 1; }
+            display_name=$2
             shift 2
             ;;
         --target)
@@ -84,7 +98,17 @@ if [ ! -x "$MONITOR_HELPER" ]; then
     exit 1
 fi
 
-current_output=$($MONITOR_HELPER get --display "$display" input)
+run_helper() {
+    if [ -n "$display_id" ]; then
+        "$MONITOR_HELPER" "$@" --id "$display_id"
+    elif [ -n "$display_name" ]; then
+        "$MONITOR_HELPER" "$@" --name "$display_name"
+    else
+        "$MONITOR_HELPER" "$@" --display "$display"
+    fi
+}
+
+current_output=$(run_helper get input)
 current_code=$(printf '%s\n' "$current_output" | awk -F= '/^current=/{print $2}')
 
 case "$current_code" in
@@ -104,8 +128,8 @@ restore_input() {
 
     restored=1
     echo "Restoring input to VCP value $current_code" >&2
-    if ! $MONITOR_HELPER set --display "$display" input "$current_code" >/dev/null; then
-        echo "Failed to restore the original input. Try running: $MONITOR_HELPER set --display $display input $current_code" >&2
+    if ! run_helper set input "$current_code" >/dev/null; then
+        echo "Failed to restore the original input. Try running a manual restore with monitor-helper set input $current_code and the same selector." >&2
         exit 1
     fi
 }
@@ -113,8 +137,8 @@ restore_input() {
 trap 'restore_input' EXIT HUP INT TERM
 
 echo "Current input VCP value: $current_code"
-echo "Switching display $display to $target_label (VCP value $target_code) for ${duration}s"
-$MONITOR_HELPER set --display "$display" input "$target_code" >/dev/null
+echo "Switching target monitor to $target_label (VCP value $target_code) for ${duration}s"
+run_helper set input "$target_code" >/dev/null
 sleep "$duration"
 restore_input
 trap - EXIT HUP INT TERM
