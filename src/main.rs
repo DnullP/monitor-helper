@@ -62,6 +62,11 @@ mod app {
             #[command(flatten)]
             selector: DisplaySelector,
         },
+        /// Print the raw MCCS capability string and parsed capability fields
+        Capabilities {
+            #[command(flatten)]
+            selector: DisplaySelector,
+        },
         /// Scan a range of VCP feature codes and print readable entries
         Scan {
             #[command(flatten)]
@@ -495,6 +500,115 @@ mod app {
                     .collect::<Vec<_>>()
                     .join(" ");
                 println!("observed_readable_codes={codes}");
+            }
+        }
+
+        Ok(())
+    }
+
+    fn print_capabilities(selector: DisplaySelector) -> Result<(), String> {
+        let monitors = selected_displays(&selector)?;
+
+        for (position, (display, mut monitor)) in monitors.into_iter().enumerate() {
+            if position > 0 {
+                println!();
+            }
+
+            let raw = monitor.handle.capabilities_string().map_err(|err| {
+                format!(
+                    "Failed to read capabilities from display {}: {err}",
+                    display
+                )
+            })?;
+
+            refresh_monitor_info(&mut monitor);
+
+            println!("display={display}");
+            println!("controller={}", controller_name(&monitor.info));
+            println!("description={}", monitor.info);
+            println!("capabilities_raw={}", String::from_utf8_lossy(&raw));
+
+            match mccs_caps::parse_capabilities(&raw) {
+                Ok(caps) => {
+                    if let Some(protocol) = caps.protocol {
+                        println!("capabilities_protocol={protocol}");
+                    }
+                    if let Some(display_type) = caps.ty {
+                        println!("capabilities_type={display_type}");
+                    }
+                    if let Some(model) = caps.model.as_deref() {
+                        println!("capabilities_model={model}");
+                    }
+                    if let Some(whql) = caps.ms_whql {
+                        println!("capabilities_ms_whql={whql}");
+                    }
+                    if let Some(version) = caps.mccs_version {
+                        println!("capabilities_mccs_version={version}");
+                    }
+
+                    if !caps.commands.is_empty() {
+                        let commands = caps
+                            .commands
+                            .iter()
+                            .map(|code| format!("0x{code:02X}"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        println!("capabilities_commands={commands}");
+                    }
+
+                    if !caps.vcp_features.is_empty() {
+                        println!("capabilities_vcp_features:");
+                        for (code, descriptor) in caps.vcp_features.iter() {
+                            if let Some(name) = descriptor.name.as_deref() {
+                                println!("  0x{code:02X} name={name}");
+                            } else {
+                                println!("  0x{code:02X}");
+                            }
+
+                            if !descriptor.values.is_empty() {
+                                let values = descriptor
+                                    .values
+                                    .iter()
+                                    .map(|(value, name)| match name.as_deref() {
+                                        Some(label) => format!("0x{value:02X}={label}"),
+                                        None => format!("0x{value:02X}"),
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                println!("    values: {values}");
+                            }
+                        }
+                    }
+
+                    if caps.edid.is_some() {
+                        println!("capabilities_has_edid=true");
+                    }
+                    if !caps.vdif.is_empty() {
+                        println!("capabilities_vdif_count={}", caps.vdif.len());
+                    }
+                    if !caps.unknown_tags.is_empty() {
+                        println!("capabilities_unknown_tags:");
+                        for tag in caps.unknown_tags.iter() {
+                            match &tag.data {
+                                mccs::UnknownData::String(value) => {
+                                    println!("  {}={}", tag.name, value);
+                                }
+                                mccs::UnknownData::StringBytes(bytes)
+                                | mccs::UnknownData::Binary(bytes) => {
+                                    let encoded = bytes
+                                        .iter()
+                                        .map(|byte| format!("{byte:02X}"))
+                                        .collect::<Vec<_>>()
+                                        .join("");
+                                    println!("  {}=0x{}", tag.name, encoded);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    println!("capabilities_parse_error={err}");
+                }
             }
         }
 
@@ -948,6 +1062,7 @@ mod app {
                 value,
             } => set_feature(selector, feature, value),
             Command::Profile { selector } => print_profile(selector),
+            Command::Capabilities { selector } => print_capabilities(selector),
             Command::Scan {
                 selector,
                 start,

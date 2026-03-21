@@ -82,6 +82,94 @@ Conclusion so far:
 - the generic mapping table is not correct for this model
 - the current readback does not distinguish HDMI1 vs HDMI2
 
+### 4.1. macOS write-side DP attempt caused a visible mode change pulse
+
+With the monitor on the macOS direct-HDMI path, this command was sent:
+
+```sh
+./target/debug/monitor-helper set --display 1 input 15
+```
+
+Observed result:
+
+- software reported success with `set=15` and `set_label=displayport-1`
+- the user observed that the picture flashed once
+
+Practical interpretation:
+
+- the monitor almost certainly received the DDC/CI input-switch write
+- the display attempted to transition toward DP
+- if no active DP signal is present, many monitors briefly blank or pulse and then remain on or fall back to the current visible source
+- this is strong evidence that `displayport=15` is a valid write-side code on V2419QW even though readback remains ambiguous
+
+Follow-up check from the same macOS host after the flash:
+
+```sh
+./target/debug/monitor-helper list
+./target/debug/monitor-helper get --display 1 input
+```
+
+Observed result:
+
+- the monitor was still enumerated as `display=1`
+- `get --display 1 input` still returned `current=768`, `current_hex=0x0300`, `current_high_byte=3`
+
+Updated interpretation:
+
+- the write triggered a visible mode pulse, but the monitor did not persist on another input from the perspective of the current macOS HDMI path
+- if a valid DP signal really was present, either the monitor briefly tested DP and returned, or `15` is accepted syntactically but does not map to a lasting DP selection on this exact state/path
+
+### 4.2. Second macOS `15` write caused complete DDC loss from the HDMI-side host
+
+A later retry from the same macOS host produced a different result:
+
+```sh
+./target/debug/monitor-helper set --display 1 input 15
+./target/debug/monitor-helper get --display 1 input
+```
+
+Observed result:
+
+- the `set` command again reported success with `set=15`
+- the immediate follow-up `get` failed with `No DDC/CI-capable external monitors were found.`
+
+Updated practical interpretation:
+
+- this is strong evidence that the second `15` write switched the monitor away from the current macOS HDMI-connected source strongly enough that the host could no longer enumerate or read it
+- combined with the Windows-side evidence, `displayport=15` should be treated as a valid write-side switch value for V2419QW
+- once the monitor leaves the active source for the controlling host, DDC access from that host may disappear immediately
+
+### 4.3. Additional raw candidate probes on macOS
+
+Further direct writes were tested from the same macOS host:
+
+```sh
+./target/debug/monitor-helper set --display 1 input 14
+./target/debug/monitor-helper set --display 1 input 15
+./target/debug/monitor-helper set --display 1 input 16
+./target/debug/monitor-helper set --display 1 input 17
+./target/debug/monitor-helper set --display 1 input 18
+./target/debug/monitor-helper set --display 1 input 19
+```
+
+Observed results:
+
+- `14` -> physically confirmed as `HDMI2`
+- `15` -> physically confirmed as `HDMI2`; software-side follow-up sometimes lost DDC visibility from the current host immediately after the write
+- `16` -> physically confirmed as `HDMI2`
+- `17` -> physically confirmed as `HDMI1`; one macOS readback attempt after switching left the monitor enumerable but `get --display 1 input` failed with `invalid DDC/CI length`
+- `18` -> physically confirmed as `HDMI1`
+- `19` -> physically confirmed as `HDMI2`; one macOS readback attempt immediately afterward returned `No DDC/CI-capable external monitors found.` because the host temporarily lost DDC visibility
+
+Interpretation:
+
+- `14`, `15`, `16`, and `19` all map to `HDMI2` on this model
+- `17` and `18` both map to `HDMI1` on this model
+- `17` can leave the monitor still enumerable but with read-degraded DDC on this host/path
+- `15` and `19` can temporarily make the current host lose DDC visibility even though the physical result still lands on `HDMI2`
+- the model does not follow the generic MCCS input alias table; multiple adjacent values collapse onto the same HDMI source
+- there is currently no physically confirmed DP write value from the tested set `14..19`
+
 ### 5. Windows DisplayPort readback matches HDMI
 
 With the V2419QW connected on Windows and correlated through WMI as a DisplayPort-connected panel, `0x60` still returned the same packed value:
@@ -233,6 +321,39 @@ The core switching plumbing is in place.
 Provide reliable direct input switching for this model without pretending that ambiguous packed readback can be restored safely.
 
 The monitor appears unable to expose useful per-input distinction through `0x60`, so the tool should expose a write-capable but read-ambiguous input model for this display.
+
+## Capabilities String Findings
+
+The project now has a `capabilities` command:
+
+```sh
+./target/debug/monitor-helper capabilities --display 1
+```
+
+On macOS with the V2419QW visible, it returned:
+
+```text
+capabilities_raw=(vcp(02 04 05 08 0B 0C 10 12 14(05 06 08 0B) 16 18 1A 60(0F 11) 62 8D(01 02)A8 AC AE B6 C6 C8 C9 D6(04) DF)prot(monitor)type(LCD)cmds(01 02 03 07 0C F3)mccs_ver(2.1)asset_eep(64)mpu_ver(001)model(V2419QW)mswhql(1))
+```
+
+Key parsed fields:
+
+- `protocol=monitor`
+- `type=lcd`
+- `model=V2419QW`
+- `mccs_version=2.1`
+- `vcp 0x60 values: 0x0F 0x11`
+
+Interpretation:
+
+- the monitor's own advertised MCCS capabilities say `input (0x60)` supports only two values: `0x0F` and `0x11`
+- in decimal, those are `15` and `17`
+- this strongly suggests the monitor officially exposes only two logical input selections through MCCS, despite other adjacent values sometimes producing HDMI-side behavior in practice
+- the most likely interpretation is now:
+  - `15` = one logical source
+  - `17` = the other logical source
+- because physical testing showed many neighboring values collapsing back onto HDMI1 or HDMI2, Dell is likely aliasing or normalizing multiple writes internally while only advertising two real MCCS input states
+- this makes `15` the strongest DP candidate again from the capability-string perspective, while `17` remains the strongest HDMI candidate
 
 ## Suggested Next Commands For The Next Agent
 

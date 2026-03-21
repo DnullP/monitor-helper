@@ -407,6 +407,8 @@ dependencies = [
  "clap",
  "ddc-hi",
  "futures-lite",
+ "mccs",
+ "mccs-caps",
  "nusb",
 ]
 
