@@ -147,19 +147,24 @@ const GENERIC_FEATURES: &[FeatureSpec] = &[
 
 const P2711V_INPUT_VALUES: &[ValueOption] = &[
     ValueOption {
-        value: 1,
-        label: "vga",
-        aliases: &["vga", "vga-1", "analog"],
+        value: 15,
+        label: "dp",
+        aliases: &["displayport", "displayport-1", "dp", "dp1", "dp-1"],
     },
     ValueOption {
-        value: 3,
-        label: "dvi",
-        aliases: &["dvi", "dvi-1"],
+        value: 16,
+        label: "displayport-2",
+        aliases: &["displayport-2", "dp2", "dp-2"],
+    },
+    ValueOption {
+        value: 17,
+        label: "hdmi-1",
+        aliases: &["hdmi-1", "hdmi1"],
     },
     ValueOption {
         value: 18,
         label: "hdmi",
-        aliases: &["hdmi", "hdmi-2"],
+        aliases: &["hdmi", "hdmi-2", "hdmi2"],
     },
 ];
 
@@ -495,11 +500,37 @@ fn parse_u16(input: &str) -> Result<u16, std::num::ParseIntError> {
 mod tests {
     use super::{PROFILES, resolve_feature, resolve_value, value_label, write_value_label};
 
+    fn p2711v_profile() -> &'static super::MonitorProfile {
+        PROFILES
+            .iter()
+            .find(|profile| profile.key == "dell-p2711v")
+            .expect("P2711V profile should exist")
+    }
+
     fn v2419qw_profile() -> &'static super::MonitorProfile {
         PROFILES
             .iter()
             .find(|profile| profile.key == "dell-v2419qw")
             .expect("V2419QW profile should exist")
+    }
+
+    #[test]
+    fn p2711v_input_matches_capability_values() {
+        let profile = Some(p2711v_profile());
+        let feature = resolve_feature(profile, "input").expect("input feature should resolve");
+
+        assert_eq!(resolve_value(feature.spec, "displayport").unwrap(), 15);
+        assert_eq!(resolve_value(feature.spec, "displayport-2").unwrap(), 16);
+        assert_eq!(resolve_value(feature.spec, "hdmi-1").unwrap(), 17);
+        assert_eq!(resolve_value(feature.spec, "hdmi").unwrap(), 18);
+        assert_eq!(value_label(feature.spec, 15), Some("dp"));
+        assert_eq!(value_label(feature.spec, 16), Some("displayport-2"));
+        assert_eq!(value_label(feature.spec, 17), Some("hdmi-1"));
+        assert_eq!(value_label(feature.spec, 18), Some("hdmi"));
+        assert_eq!(write_value_label(feature.spec, 15), Some("dp"));
+        assert_eq!(write_value_label(feature.spec, 16), Some("displayport-2"));
+        assert_eq!(write_value_label(feature.spec, 17), Some("hdmi-1"));
+        assert_eq!(write_value_label(feature.spec, 18), Some("hdmi"));
     }
 
     #[test]
